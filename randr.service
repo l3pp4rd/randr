@@ -1,0 +1,13 @@
+[Unit]
+Description=Auto-mirror displays on hotplug
+After=graphical-session.target
+
+[Service]
+Type=simple
+Environment=DISPLAY=:0
+ExecStart=%h/.local/bin/randr
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=graphical-session.target
