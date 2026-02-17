@@ -73,11 +73,27 @@ func parseXrandr() ([]output, error) {
 	return outputs, nil
 }
 
+// primaryNativeRes returns the first (native) resolution of the primary output.
+func primaryNativeRes(outputs []output) resolution {
+	for _, o := range outputs {
+		if o.Primary && len(o.Resolutions) > 0 {
+			return o.Resolutions[0]
+		}
+	}
+	// No primary found — use the first connected output with resolutions.
+	for _, o := range outputs {
+		if o.Connected && len(o.Resolutions) > 0 {
+			return o.Resolutions[0]
+		}
+	}
+	return resolution{}
+}
+
 // bestCommonResolution finds the highest-pixel-count resolution shared by all
-// the given outputs. Falls back to the best resolution of the new output.
-func bestCommonResolution(outputs []output) resolution {
+// the given outputs. Falls back to the primary monitor's native resolution.
+func bestCommonResolution(primary output, outputs []output) resolution {
 	if len(outputs) == 0 {
-		return resolution{1920, 1080}
+		return primaryNativeRes(outputs)
 	}
 
 	// Build set from first output's resolutions.
@@ -105,12 +121,11 @@ func bestCommonResolution(outputs []output) resolution {
 	}
 
 	if len(shared) == 0 {
-		// No common resolution — pick the best of the last (newly connected) output.
-		last := outputs[len(outputs)-1]
-		if len(last.Resolutions) > 0 {
-			return last.Resolutions[0]
+		// No common resolution — fall back to primary's native resolution.
+		if len(primary.Resolutions) > 0 {
+			return primary.Resolutions[0]
 		}
-		return resolution{1920, 1080}
+		return primaryNativeRes(outputs)
 	}
 
 	sort.Slice(shared, func(i, j int) bool {
@@ -215,7 +230,7 @@ func run() error {
 			}
 
 			if len(externals) > 0 {
-				res := bestCommonResolution(all)
+				res := bestCommonResolution(primary, all)
 				log.Printf("mirroring at %s", res)
 				if err := mirror(primary, externals, res); err != nil {
 					log.Printf("mirror failed: %v", err)
