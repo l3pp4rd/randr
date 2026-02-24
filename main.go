@@ -166,6 +166,38 @@ func connectedSet(outputs []output) map[string]bool {
 	return s
 }
 
+// applyMirror finds the primary and external outputs among connected monitors
+// and mirrors them at the best common resolution.
+func applyMirror(outputs []output) {
+	var primary output
+	var externals []output
+	var all []output
+	for _, o := range outputs {
+		if !o.Connected {
+			continue
+		}
+		if o.Primary {
+			primary = o
+		} else {
+			externals = append(externals, o)
+		}
+		all = append(all, o)
+	}
+
+	if primary.Name == "" && len(all) > 0 {
+		primary = all[0]
+		externals = all[1:]
+	}
+
+	if len(externals) > 0 {
+		res := bestCommonResolution(primary, all)
+		log.Printf("mirroring at %s", res)
+		if err := mirror(primary, externals, res); err != nil {
+			log.Printf("mirror failed: %v", err)
+		}
+	}
+}
+
 func run() error {
 	log.SetFlags(log.Ldate | log.Ltime)
 	log.Println("randr: watching for monitor changes...")
@@ -175,6 +207,12 @@ func run() error {
 		return err
 	}
 	prevSet := connectedSet(prev)
+
+	// If external monitors are already connected at startup, mirror them.
+	if len(prevSet) > 1 {
+		log.Println("external monitor(s) already connected, applying mirror")
+		applyMirror(prev)
+	}
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
@@ -207,35 +245,7 @@ func run() error {
 
 		if len(newOutputs) > 0 {
 			log.Printf("new monitor(s) detected: %s", strings.Join(newOutputs, ", "))
-
-			// Identify primary and all connected externals.
-			var primary output
-			var externals []output
-			var all []output
-			for _, o := range cur {
-				if !o.Connected {
-					continue
-				}
-				if o.Primary {
-					primary = o
-				} else {
-					externals = append(externals, o)
-				}
-				all = append(all, o)
-			}
-
-			if primary.Name == "" && len(all) > 0 {
-				primary = all[0]
-				externals = all[1:]
-			}
-
-			if len(externals) > 0 {
-				res := bestCommonResolution(primary, all)
-				log.Printf("mirroring at %s", res)
-				if err := mirror(primary, externals, res); err != nil {
-					log.Printf("mirror failed: %v", err)
-				}
-			}
+			applyMirror(cur)
 		}
 
 		// Detect disconnected outputs — revert primary to its native res.
